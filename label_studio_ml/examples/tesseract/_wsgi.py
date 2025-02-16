@@ -6,6 +6,7 @@ import logging.config
 
 logging.config.dictConfig({
   "version": 1,
+  "disable_existing_loggers": False,
   "formatters": {
     "standard": {
       "format": "[%(asctime)s] [%(levelname)s] [%(name)s::%(funcName)s::%(lineno)d] %(message)s"
@@ -107,10 +108,6 @@ if __name__ == "__main__":
 
     app = init_app(
         model_class=BBOXOCR,
-        model_dir=os.environ.get('MODEL_DIR', args.model_dir),
-        redis_queue=os.environ.get('RQ_QUEUE_NAME', 'default'),
-        redis_host=os.environ.get('REDIS_HOST', 'localhost'),
-        redis_port=os.environ.get('REDIS_PORT', 6379),
         **kwargs
     )
 
@@ -119,9 +116,5 @@ if __name__ == "__main__":
 else:
     # for uWSGI use
     app = init_app(
-        model_class=BBOXOCR,
-        model_dir=os.environ.get('MODEL_DIR', os.path.dirname(__file__)),
-        redis_queue=os.environ.get('RQ_QUEUE_NAME', 'default'),
-        redis_host=os.environ.get('REDIS_HOST', 'localhost'),
-        redis_port=os.environ.get('REDIS_PORT', 6379)
+        model_class=BBOXOCR
     )

@@ -1,12 +1,15 @@
-import logging
 import difflib
+import logging
+import os
+import re
 
 from PIL import Image, ImageOps
 from collections import OrderedDict
 from typing import List
+from urllib.parse import urlparse
 
-from label_studio_tools.core.utils.params import get_env
-from label_studio_tools.core.utils.io import get_local_path
+from label_studio_sdk._extensions.label_studio_tools.core.utils.params import get_env
+from label_studio_sdk._extensions.label_studio_tools.core.utils.io import get_local_path
 
 DATA_UNDEFINED_NAME = '$undefined$'
 
@@ -22,7 +25,7 @@ def get_single_tag_keys(parsed_label_config, control_type, object_type):
     :param object_type: object tag str as it written in label config (e.g. 'Text')
     :return: 3 string keys and 1 array of string labels: (from_name, to_name, value, labels)
     """
-    assert len(parsed_label_config) == 1
+    assert len(parsed_label_config) == 1, "Please check your Labeling Interface configuration: At least one control tag should be in the labeling config."  # noqa
     from_name, info = list(parsed_label_config.items())[0]
     assert info['type'] == control_type, 'Label config has control tag "<' + info['type'] + '>" but "<' + control_type + '>" is expected for this model.'  # noqa
 
@@ -41,7 +44,7 @@ def get_first_tag_keys(parsed_label_config, control_type, object_type):
     :param control_type:
     :param object_type:
     :return:
-    """
+    """    
     for from_name, info in parsed_label_config.items():
         if info['type'] == control_type:
             for input in info['inputs']:
@@ -61,15 +64,23 @@ def get_choice(completion):
     return completion['annotations'][0]['result'][0]['value']['choices'][0]
 
 
-def get_image_local_path(url, image_cache_dir=None, project_dir=None, image_dir=None,
-                         label_studio_host=None, label_studio_access_token=None):
+def get_image_local_path(
+        url,
+        image_cache_dir=None,
+        project_dir=None,
+        image_dir=None,
+        label_studio_host=None, 
+        label_studio_access_token=None,
+        task_id=None
+):
     image_local_path = get_local_path(
         url=url,
         cache_dir=image_cache_dir,
         project_dir=project_dir,
         hostname=label_studio_host or get_env('HOSTNAME'),
         image_dir=image_dir,
-        access_token=label_studio_access_token
+        access_token=label_studio_access_token,
+        task_id=task_id
     )
     logger.debug(f'Image stored in the local path: {image_local_path}')
     return image_local_path
@@ -122,8 +133,46 @@ def match_labels(input: str, labels: List[str]) -> List[str]:
     return matched_labels
 
 
-if __name__ == "__main__":
-    c = InMemoryLRUDictCache(2)
-    c.put(1, 1)
-    c.put(2,2)
-    print(c.cache)
+def is_valid_url(path):
+    # Check if the text is a valid URL
+    try:
+        result = urlparse(path)
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
+
+
+def is_preload_needed(url):
+    if url.startswith('upload') or url.startswith('/upload'):
+        url = '/data' + ('' if url.startswith('/') else '/') + url
+
+    is_uploaded_file = url.startswith('/data/upload')
+    is_local_storage_file = url.startswith('/data/') and '?d=' in url
+    is_cloud_storage_file = url.startswith('s3:') or url.startswith('gs:') or url.startswith('azure-blob:')
+    path_exists = os.path.exists(url)
+
+    return (
+        is_uploaded_file
+        or is_local_storage_file
+        or is_cloud_storage_file
+        or is_valid_url(url)
+        or path_exists
+    )
+
+
+def compare_nested_structures(a, b, path="", rel=1e-4, abs=None):
+    from pytest import approx  # pytest is optional package, use it inside of this func
+
+    """Compare two dicts or list with approx() for float values"""
+    if isinstance(a, dict) and isinstance(b, dict):
+        assert a.keys() == b.keys(), f"Keys mismatch at {path}"
+        for key in a.keys():
+            compare_nested_structures(a[key], b[key], path + "." + str(key), rel, abs)
+    elif isinstance(a, list) and isinstance(b, list):
+        assert len(a) == len(b), f"List size mismatch at {path}"
+        for i, (act_item, exp_item) in enumerate(zip(a, b)):
+            compare_nested_structures(act_item, exp_item, path + f"[{i}]", rel, abs)
+    elif isinstance(a, float) and isinstance(b, float):
+        assert a == approx(b, rel=rel, abs=abs), f"Mismatch at {path}"
+    else:
+        assert a == b, f"Mismatch at {path}"

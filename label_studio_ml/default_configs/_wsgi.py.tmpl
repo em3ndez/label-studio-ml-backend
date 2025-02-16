@@ -4,8 +4,12 @@ import json
 import logging
 import logging.config
 
+# Set a default log level if LOG_LEVEL is not defined
+log_level = os.getenv("LOG_LEVEL", "INFO")
+
 logging.config.dictConfig({{
   "version": 1,
+  "disable_existing_loggers": False,  # Prevent overriding existing loggers
   "formatters": {{
     "standard": {{
       "format": "[%(asctime)s] [%(levelname)s] [%(name)s::%(funcName)s::%(lineno)d] %(message)s"
@@ -14,13 +18,13 @@ logging.config.dictConfig({{
   "handlers": {{
     "console": {{
       "class": "logging.StreamHandler",
-      "level": os.getenv('LOG_LEVEL'),
+      "level": log_level,
       "stream": "ext://sys.stdout",
       "formatter": "standard"
     }}
   }},
   "root": {{
-    "level": os.getenv('LOG_LEVEL'),
+    "level": log_level,
     "handlers": [
       "console"
     ],
@@ -59,7 +63,7 @@ if __name__ == "__main__":
         '-d', '--debug', dest='debug', action='store_true',
         help='Switch debug mode')
     parser.add_argument(
-        '--log-level', dest='log_level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], default=None,
+        '--log-level', dest='log_level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], default=log_level,
         help='Logging level')
     parser.add_argument(
         '--model-dir', dest='model_dir', default=os.path.dirname(__file__),
@@ -67,7 +71,14 @@ if __name__ == "__main__":
     parser.add_argument(
         '--check', dest='check', action='store_true',
         help='Validate model instance before launching server')
-
+    parser.add_argument('--basic-auth-user',
+                        default=os.environ.get('ML_SERVER_BASIC_AUTH_USER', None),
+                        help='Basic auth user')
+    
+    parser.add_argument('--basic-auth-pass',
+                        default=os.environ.get('ML_SERVER_BASIC_AUTH_PASS', None),
+                        help='Basic auth pass')    
+    
     args = parser.parse_args()
 
     # setup logging level
@@ -105,7 +116,7 @@ if __name__ == "__main__":
         print('Check "' + {model_class}.__name__ + '" instance creation..')
         model = {model_class}(**kwargs)
 
-    app = init_app(model_class={model_class})
+    app = init_app(model_class={model_class}, basic_auth_user=args.basic_auth_user, basic_auth_pass=args.basic_auth_pass)
 
     app.run(host=args.host, port=args.port, debug=args.debug)
 
